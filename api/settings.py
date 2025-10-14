@@ -16,8 +16,8 @@ class AppSettings:
         self.llm_name = "gemini/gemini-2.0-flash"
         self.embedding_name = "gemini/text-embedding-004"
         
-        _backend_dir = os.path.dirname(os.path.abspath(__file__))
-        self.papers_directory = os.path.join(_backend_dir, "my_papers")
+        _api_dir = os.path.dirname(os.path.abspath(__file__))
+        self.papers_directory = os.path.join(_api_dir, "my_papers")
 
     def get_paperqa_settings(self):
         from prompts import prompts  # Local import to avoid circular dependency
