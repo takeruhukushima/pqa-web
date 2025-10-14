@@ -1,0 +1,7 @@
+
+.vercel
+.gitignore
+LICENSE
+README.md
+venv
+__pycache__

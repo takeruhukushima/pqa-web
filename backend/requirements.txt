@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+python-dotenv
+paper-qa
+google-generativeai
+lxml
+python-multipart
