@@ -107,7 +107,7 @@ export function ChatInterface() {
                     y: isFocused ? 50 : 0,
                     opacity: isFocused ? 0 : 1,
                     filter: isFocused ? "blur(4px)" : "blur(0px)",
-                    rotation: isFocused ? 180 : 0,
+                    rotate: isFocused ? 180 : 0,
                   }}
                   transition={{ duration: 0.5, type: "spring", stiffness: 200, damping: 20 }}
                 >
