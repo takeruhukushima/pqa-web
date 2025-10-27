@@ -55,7 +55,7 @@ export function ChatInterface() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ question: inputValue }),
+        body: JSON.stringify({ question: inputValue, session_id: sessionId }),
       })
 
       if (!response.ok) {
@@ -64,6 +64,11 @@ export function ChatInterface() {
       }
 
       const result = await response.json()
+
+      // UPDATE sessionId from backend response
+      if (result.session_id) {
+        setSessionId(result.session_id);
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),

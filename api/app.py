@@ -17,6 +17,7 @@ from paperqa.settings import AgentSettings
 
 # Make sure to initialize settings first
 from settings import settings as app_settings
+from prompts import prompts
 
 app = FastAPI()
 
@@ -67,7 +68,7 @@ async def get_conversational_response(question: str, api_key: str) -> str:
         chat_template = ChatPromptTemplate.from_messages(
             [
                 SystemMessage(
-                    content="あなたはフレンドリーで、簡潔な日本語で応答するアシスタントです。"
+                    content=prompts.conversational_system
                 ),
                 HumanMessage(content="{question}"),
             ]
@@ -160,7 +161,7 @@ async def chat_with_papers(request: ChatRequest):
         cleaned_answer = clean_answer_text(final_answer_text)
 
         source = "rag_api" # Default to rag_api
-        if not cleaned_answer or cleaned_answer.lower() in ["none", ""]:
+        if not cleaned_answer or cleaned_answer.lower() in ["none", "", "i cannot answer."]:
             # If no answer from PaperQA, try to get a conversational response
             cleaned_answer = await get_conversational_response(request.question, app_settings.gemini_api_key)
             source = "conversational_api" # To distinguish from rag_api
