@@ -4,6 +4,7 @@ import logging
 import json
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -24,7 +25,7 @@ app = FastAPI()
 # --- Logging Setup ---
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs')
 os.makedirs(log_dir, exist_ok=True)
-log_file_path = os.path.join(log_dir, f'{datetime.utcnow().strftime("%Y-%m-%d")}.jsonl')
+log_file_path = os.path.join(log_dir, f'{datetime.now(ZoneInfo('Asia/Tokyo')).strftime("%Y-%m-%d")}.jsonl')
 
 rag_logger = logging.getLogger('rag_logger')
 rag_logger.setLevel(logging.INFO)
@@ -187,4 +188,20 @@ async def chat_with_papers(request: ChatRequest):
         print(f"Error during chat processing: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"An error occurred while processing your question: {e}")
+@app.get("/api/logs")
+async def get_logs():
+    all_logs = []
+    if os.path.exists(log_dir):
+        for filename in sorted(os.listdir(log_dir), reverse=True):
+            if filename.endswith(".jsonl"):
+                with open(os.path.join(log_dir, filename), "r") as f:
+                    for line in f:
+                        try:
+                            all_logs.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            # Handle cases where a line is not valid JSON
+                            pass
+    return all_logs
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
