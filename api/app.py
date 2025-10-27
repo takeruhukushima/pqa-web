@@ -172,7 +172,7 @@ async def chat_with_papers(request: ChatRequest):
         # Create the response data dictionary with the desired key order
         response_data = {
             "session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(ZoneInfo('Asia/Tokyo')).isoformat(),
             "question": request.question,
             "answer": cleaned_answer,
             "source": source, # Use the dynamic source
