@@ -1,7 +1,12 @@
 import os
 import re
+import logging
+import json
+import uuid
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from paperqa import Docs, Settings
@@ -11,6 +16,20 @@ from paperqa.settings import AgentSettings
 from settings import settings as app_settings
 
 app = FastAPI()
+
+# --- Logging Setup ---
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs')
+os.makedirs(log_dir, exist_ok=True)
+log_file_path = os.path.join(log_dir, f'{datetime.utcnow().strftime("%Y-%m-%d")}.jsonl')
+
+rag_logger = logging.getLogger('rag_logger')
+rag_logger.setLevel(logging.INFO)
+# Prevent duplicate handlers
+if not rag_logger.handlers:
+    handler = logging.FileHandler(log_file_path)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    rag_logger.addHandler(handler)
+# --- End Logging Setup ---
 
 # Configure CORS
 app.add_middleware(
@@ -23,6 +42,7 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     question: str
+    session_id: str | None = None
 
 def clean_answer_text(text: str) -> str:
     """A utility function to clean the answer text from paperqa."""
@@ -120,7 +140,22 @@ async def chat_with_papers(request: ChatRequest):
         if not cleaned_answer or cleaned_answer.lower() in ["none", ""]:
             cleaned_answer = "I could not find an answer in the provided documents."
 
-        return {"answer": cleaned_answer}
+        session_id = request.session_id if request.session_id else str(uuid.uuid4())
+
+        # Create the response data dictionary with the desired key order
+        response_data = {
+            "session_id": session_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "question": request.question,
+            "answer": cleaned_answer,
+            "source": "rag_api",
+        }
+
+        # Log the response data, ensuring Japanese characters are handled correctly
+        rag_logger.info(json.dumps(response_data, ensure_ascii=False))
+
+        # Return a JSONResponse to ensure proper JSON formatting and headers
+        return JSONResponse(content=response_data)
 
     except Exception as e:
         print(f"Error during chat processing: {e}")

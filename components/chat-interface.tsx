@@ -20,6 +20,7 @@ export function ChatInterface() {
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -27,6 +28,12 @@ export function ChatInterface() {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
   }, [messages])
+
+  useEffect(() => {
+    // Generate a unique session ID on component mount
+    const newSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    setSessionId(newSessionId);
+  }, []);
 
 
   const handleSendMessage = async () => {
