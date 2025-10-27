@@ -1,0 +1,15 @@
+[project]
+name = "pqa-web-api"
+version = "0.1.0"
+
+dependencies = [
+    "fastapi==0.111.0",
+    "uvicorn==0.30.1",
+    "python-dotenv==1.0.1",
+    "paper-qa==5.0.0",
+    "google-genai==0.6.0",
+    "lxml==5.2.2",
+    "python-multipart==0.0.9",
+    "langchain==0.2.1",
+    "langchain-google-genai==1.0.5",
+]

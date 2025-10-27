@@ -8,6 +8,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
 
 from paperqa import Docs, Settings
 from paperqa.settings import AgentSettings
@@ -56,6 +59,25 @@ def clean_answer_text(text: str) -> str:
     # Normalize newlines
     text = re.sub(r'\n\s*\n', '\n\n', text)
     return text.strip()
+
+async def get_conversational_response(question: str, api_key: str) -> str:
+    """Generates a conversational response using LangChain with Gemini."""
+    try:
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
+        chat_template = ChatPromptTemplate.from_messages(
+            [
+                SystemMessage(
+                    content="あなたはフレンドリーで、簡潔な日本語で応答するアシスタントです。"
+                ),
+                HumanMessage(content="{question}"),
+            ]
+        )
+        chain = chat_template | llm
+        response = await chain.ainvoke({"question": question})
+        return response.content
+    except Exception as e:
+        print(f"Error getting conversational response with LangChain: {e}")
+        return "申し訳ありませんが、今は応答できません。"
 
 @app.post("/api/chat")
 async def chat_with_papers(request: ChatRequest):
@@ -137,8 +159,11 @@ async def chat_with_papers(request: ChatRequest):
 
         cleaned_answer = clean_answer_text(final_answer_text)
 
+        source = "rag_api" # Default to rag_api
         if not cleaned_answer or cleaned_answer.lower() in ["none", ""]:
-            cleaned_answer = "I could not find an answer in the provided documents."
+            # If no answer from PaperQA, try to get a conversational response
+            cleaned_answer = await get_conversational_response(request.question, app_settings.gemini_api_key)
+            source = "conversational_api" # To distinguish from rag_api
 
         session_id = request.session_id if request.session_id else str(uuid.uuid4())
 
@@ -148,7 +173,7 @@ async def chat_with_papers(request: ChatRequest):
             "timestamp": datetime.utcnow().isoformat(),
             "question": request.question,
             "answer": cleaned_answer,
-            "source": "rag_api",
+            "source": source, # Use the dynamic source
         }
 
         # Log the response data, ensuring Japanese characters are handled correctly
