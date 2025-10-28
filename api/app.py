@@ -141,7 +141,7 @@ tools = [paperqa_query]
 
 
 # Use a model that supports tool calling
-model = ChatGoogleGenerativeAI(model=app_settings.llm_name, google_api_key=app_settings.gemini_api_key)
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=app_settings.gemini_api_key)
 model_with_tools = model.bind_tools(tools)
 
 def should_continue(state: AgentState) -> Literal["call_tool", "__end__"]:
