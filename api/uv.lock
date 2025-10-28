@@ -1103,6 +1103,18 @@ wheels = [
 ]
 
 [[package]]
+name = "langgraph"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f0/59/bafd8eca2e382d1d8c6013d48a2c813a37fed80fa5c65e0660d1e99fa066/langgraph-0.1.1.tar.gz", hash = "sha256:cea9831c334f36bae9caa66637422e37f76f069b47233ceb253be6cfb3ecb35e", size = 68501, upload-time = "2024-06-22T00:51:13.405Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bc/6f/ad63ff73f5baade85bf5ebcc190301ab7725e5b60b469859213456f3e730/langgraph-0.1.1-py3-none-any.whl", hash = "sha256:6d798072625fd23ff155d40ee823b4e5eb00731ad8a64e2551fd6ae0cb53aec4", size = 87321, upload-time = "2024-06-22T00:51:10.862Z" },
+]
+
+[[package]]
 name = "langsmith"
 version = "0.1.147"
 source = { registry = "https://pypi.org/simple" }
@@ -1572,6 +1584,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "langchain" },
     { name = "langchain-google-genai" },
+    { name = "langgraph" },
     { name = "lxml" },
     { name = "paper-qa" },
     { name = "python-dotenv" },
@@ -1585,6 +1598,7 @@ requires-dist = [
     { name = "google-genai", specifier = "==0.6.0" },
     { name = "langchain", specifier = "==0.2.1" },
     { name = "langchain-google-genai", specifier = "==1.0.5" },
+    { name = "langgraph", specifier = "==0.1.1" },
     { name = "lxml", specifier = "==5.2.2" },
     { name = "paper-qa", specifier = "==5.0.0" },
     { name = "python-dotenv", specifier = "==1.0.1" },

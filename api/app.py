@@ -9,12 +9,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from typing import TypedDict, Annotated, Sequence, Literal
+import operator
+
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, SystemMessage
+from langchain.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
 
 from paperqa import Docs, Settings
-from paperqa.settings import AgentSettings
 
 # Make sure to initialize settings first
 from settings import settings as app_settings
@@ -40,53 +44,156 @@ if not rag_logger.handlers:
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for simplicity, adjust for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class ChatRequest(BaseModel):
-    question: str
-    session_id: str | None = None
+# --- PaperQA Tool Definition ---
+
+# Cache for the Docs object to avoid re-indexing
+docs_instance = None
 
 def clean_answer_text(text: str) -> str:
     """A utility function to clean the answer text from paperqa."""
     if not text:
         return ""
     text = str(text)
-    # Remove "Question: ..." line
     text = re.sub(r'^Question:.*\n', '', text, flags=re.MULTILINE)
-    # Remove "References" section
     text = re.sub(r'\n\nReferences.*$', '', text, flags=re.DOTALL)
-    # Normalize newlines
     text = re.sub(r'\n\s*\n', '\n\n', text)
     return text.strip()
 
-async def get_conversational_response(question: str, api_key: str) -> str:
-    """Generates a conversational response using LangChain with Gemini."""
+@tool
+async def paperqa_query(query: str) -> str:
+    """
+    Searches and answers questions from the PDF documents found in the 'my_papers' directory.
+    Use this tool ONLY when the user asks a specific question about the content of their documents.
+    For general conversation, do not use this tool.
+    """
+    global docs_instance
+    print(f"--- Calling PaperQA Tool with query: {query} ---")
+    
     try:
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
-        chat_template = ChatPromptTemplate.from_messages(
-            [
-                SystemMessage(
-                    content=prompts.conversational_system
-                ),
-                HumanMessage(content="{question}"),
-            ]
+        papers_dir = app_settings.papers_directory
+        if not os.path.exists(papers_dir):
+            return "Error: Could not find the 'my_papers' directory."
+        
+        pdf_files = [f for f in os.listdir(papers_dir) if f.endswith('.pdf')]
+        if not pdf_files:
+            return "Error: Could not find any PDF files in the 'my_papers' directory."
+
+        # Initialize Docs object only if it hasn't been initialized or if files changed
+        current_files = set(pdf_files)
+        if docs_instance is None or getattr(docs_instance, '_indexed_files', set()) != current_files:
+            print("Initializing or updating PaperQA Docs index...")
+            os.environ["GEMINI_API_KEY"] = app_settings.gemini_api_key
+            os.environ["GOOGLE_API_KEY"] = app_settings.gemini_api_key
+            
+            pqa_settings = Settings(
+                llm=app_settings.llm_name,
+                summary_llm=app_settings.llm_name,
+                embedding=app_settings.embedding_name,
+            )
+            
+            # Initialize Docs without constructor args
+            temp_docs = Docs()
+            
+            # Add files with settings
+            for pdf_file in pdf_files:
+                pdf_path = os.path.join(papers_dir, pdf_file)
+                await temp_docs.aadd(pdf_path, settings=pqa_settings)
+            
+            # Cache the instance
+            docs_instance = temp_docs
+            setattr(docs_instance, '_indexed_files', current_files)
+            print("PaperQA Docs index updated.")
+
+        # Query the cached documents, passing settings again
+        pqa_settings_for_query = Settings(
+            llm=app_settings.llm_name,
+            summary_llm=app_settings.llm_name,
+            embedding=app_settings.embedding_name,
         )
-        chain = chat_template | llm
-        response = await chain.ainvoke({"question": question})
-        return response.content
+        answer_response = await docs_instance.aquery(query, settings=pqa_settings_for_query)
+        
+        final_answer_text = getattr(answer_response, 'answer', str(answer_response))
+        cleaned_answer = clean_answer_text(final_answer_text)
+
+        if not cleaned_answer or cleaned_answer.lower() in ["none", "", "i cannot answer."]:
+            return "I could not find a relevant answer in the documents for your query."
+        
+        return cleaned_answer
+
     except Exception as e:
-        print(f"Error getting conversational response with LangChain: {e}")
-        return "申し訳ありませんが、今は応答できません。"
+        print(f"Error in paperqa_tool: {e}")
+        import traceback
+        traceback.print_exc()
+        return "An error occurred while searching the documents."
+
+# --- LangGraph Agent Definition ---
+
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+
+tools = [paperqa_query]
+
+
+# Use a model that supports tool calling
+model = ChatGoogleGenerativeAI(model=app_settings.llm_name, google_api_key=app_settings.gemini_api_key)
+model_with_tools = model.bind_tools(tools)
+
+def should_continue(state: AgentState) -> Literal["call_tool", "__end__"]:
+    """Decides whether to call a tool or end the conversation."""
+    last_message = state['messages'][-1]
+    if last_message.tool_calls:
+        return "call_tool"
+    return "__end__"
+
+async def call_model(state: AgentState):
+    """Calls the LLM to decide the next action."""
+    messages = state['messages']
+    response = await model_with_tools.ainvoke(messages)
+    return {"messages": [response]}
+
+
+# Define the pre-built ToolNode
+tool_node = ToolNode(tools)
+
+
+
+# Define the graph
+workflow = StateGraph(AgentState)
+workflow.add_node("agent", call_model)
+workflow.add_node("call_tool", tool_node)
+
+workflow.set_entry_point("agent")
+workflow.add_conditional_edges(
+    "agent",
+    should_continue,
+    {
+        "call_tool": "call_tool",
+        "__end__": "__end__"
+    }
+)
+workflow.add_edge('call_tool', 'agent')
+
+app_graph = workflow.compile()
+
+# --- API Endpoints ---
+
+class ChatRequest(BaseModel):
+    question: str
+    session_id: str | None = None
+    # We can add chat_history here in the future
+    # chat_history: list[dict] | None = None
 
 @app.post("/api/chat")
 async def chat_with_papers(request: ChatRequest):
     """
-    Receives a question, uses paperqa to find an answer from the documents
-    in the local my_papers directory, and returns the answer.
+    Receives a question, uses the LangGraph agent to decide whether to
+    use the PaperQA tool or respond directly.
     """
     if not app_settings.gemini_api_key:
         raise HTTPException(status_code=500, detail="API key is not configured on the server.")
@@ -94,101 +201,49 @@ async def chat_with_papers(request: ChatRequest):
     if not request.question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
+    # For now, each request is a new conversation.
+    # In the future, we can use session_id to retrieve and continue conversations.
+    inputs = {
+        "messages": [
+            SystemMessage(content=prompts.agent_system_prompt),
+            HumanMessage(content=request.question)
+        ]
+    }
+
     try:
-        papers_dir = app_settings.papers_directory
-        print(f"DEBUG: Checking for papers in directory: {papers_dir}")
-
-        if not os.path.exists(papers_dir):
-            return {"answer": "I could not find the my_papers directory. Please create backend/my_papers and add your documents."}
+        # The graph can be streamed or invoked
+        final_state = await app_graph.ainvoke(inputs)
         
-        # Get list of PDF files
-        pdf_files = [f for f in os.listdir(papers_dir) if f.endswith('.pdf')]
+        # The final answer is the last message from the assistant
+        final_answer = final_state['messages'][-1].content
         
-        if not pdf_files:
-            return {"answer": "I could not find any PDF files in the my_papers directory. Please add your documents to backend/my_papers."}
-
-        # Set environment variables for Gemini
-        os.environ["GEMINI_API_KEY"] = app_settings.gemini_api_key
-        os.environ["GOOGLE_API_KEY"] = app_settings.gemini_api_key
-        
-        # Create Settings object with Gemini configuration
-        pqa_settings = Settings(
-            llm=app_settings.llm_name,
-            summary_llm=app_settings.llm_name,
-            embedding=app_settings.embedding_name,
-        )
-        
-        print(f"Settings created - LLM: {pqa_settings.llm}, Embedding: {pqa_settings.embedding}")
-        print(f"Found {len(pdf_files)} PDF files: {pdf_files}")
-        
-        # Create Docs instance
-        docs = Docs()
-        
-        # Try to update internal settings if possible
-        if hasattr(docs, 'model_config'):
-            print(f"Docs model_config: {docs.model_config}")
-        
-        # Add all PDF files from the directory
-        print(f"Adding {len(pdf_files)} PDF files to index...")
-        for pdf_file in pdf_files:
-            pdf_path = os.path.join(papers_dir, pdf_file)
-            print(f"Adding: {pdf_file}")
-            try:
-                # Try to add with settings
-                await docs.aadd(pdf_path, settings=pqa_settings)
-            except TypeError:
-                # If settings parameter is not supported, try without it
-                await docs.aadd(pdf_path)
-        
-        print(f"Docs now contains {len(docs.docs)} documents")
-        print(f"Asking question: {request.question}")
-        
-        # Query the documents
-        try:
-            answer_response = await docs.aquery(request.question, settings=pqa_settings)
-        except TypeError:
-            # If settings parameter is not supported, try without it
-            answer_response = await docs.aquery(request.question)
-        
-        print(f"Response type: {type(answer_response)}")
-        
-        final_answer_text = ""
-        if hasattr(answer_response, 'answer') and str(answer_response.answer).strip():
-            final_answer_text = str(answer_response.answer)
-        elif hasattr(answer_response, 'formatted_answer'):
-            final_answer_text = str(answer_response.formatted_answer)
-        else:
-            final_answer_text = str(answer_response)
-
-        cleaned_answer = clean_answer_text(final_answer_text)
-
-        source = "rag_api" # Default to rag_api
-        if not cleaned_answer or cleaned_answer.lower() in ["none", "", "i cannot answer."]:
-            # If no answer from PaperQA, try to get a conversational response
-            cleaned_answer = await get_conversational_response(request.question, app_settings.gemini_api_key)
-            source = "conversational_api" # To distinguish from rag_api
+        # Determine the source based on whether a tool was used
+        source = "conversational_api"
+        for msg in final_state['messages']:
+            if isinstance(msg, ToolMessage):
+                source = "rag_api"
+                break
 
         session_id = request.session_id if request.session_id else str(uuid.uuid4())
 
-        # Create the response data dictionary with the desired key order
         response_data = {
             "session_id": session_id,
             "timestamp": datetime.now(ZoneInfo('Asia/Tokyo')).isoformat(),
             "question": request.question,
-            "answer": cleaned_answer,
-            "source": source, # Use the dynamic source
+            "answer": final_answer,
+            "source": source,
         }
 
-        # Log the response data, ensuring Japanese characters are handled correctly
         rag_logger.info(json.dumps(response_data, ensure_ascii=False))
 
-        # Return a JSONResponse to ensure proper JSON formatting and headers
         return JSONResponse(content=response_data)
 
     except Exception as e:
         print(f"Error during chat processing: {e}")
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail="An internal error occurred.")
+
 @app.get("/api/logs")
 async def get_logs():
     all_logs = []
@@ -207,9 +262,9 @@ async def get_logs():
                                         try:
                                             all_logs.append(json.loads(line))
                                         except json.JSONDecodeError:
-                                            # Handle cases where a line is not valid JSON
                                             pass
     return all_logs
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
