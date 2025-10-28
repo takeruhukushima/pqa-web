@@ -13,8 +13,8 @@ class AppSettings:
             # but rather handle this gracefully when an API call is made.
             print("警告: 環境変数 'GEMINI_API_KEY' または 'GOOGLE_API_KEY' が設定されていません。")
 
-        self.llm_name = "gemini/gemini-2.0-flash"
-        self.embedding_name = "gemini/text-embedding-004"
+        self.llm_name = "gemini-2.0-flash"
+        self.embedding_name = "text-embedding-004"
         
         _api_dir = os.path.dirname(os.path.abspath(__file__))
         self.papers_directory = os.path.join(_api_dir, "my_papers")

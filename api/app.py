@@ -92,9 +92,9 @@ async def paperqa_query(query: str) -> str:
             os.environ["GOOGLE_API_KEY"] = app_settings.gemini_api_key
             
             pqa_settings = Settings(
-                llm=app_settings.llm_name,
-                summary_llm=app_settings.llm_name,
-                embedding=app_settings.embedding_name,
+                llm=f"gemini/{app_settings.llm_name}",
+                summary_llm=f"gemini/{app_settings.llm_name}",
+                embedding=f"gemini/{app_settings.embedding_name}",
             )
             
             # Initialize Docs without constructor args
@@ -112,9 +112,9 @@ async def paperqa_query(query: str) -> str:
 
         # Query the cached documents, passing settings again
         pqa_settings_for_query = Settings(
-            llm=app_settings.llm_name,
-            summary_llm=app_settings.llm_name,
-            embedding=app_settings.embedding_name,
+            llm=f"gemini/{app_settings.llm_name}",
+            summary_llm=f"gemini/{app_settings.llm_name}",
+            embedding=f"gemini/{app_settings.embedding_name}",
         )
         answer_response = await docs_instance.aquery(query, settings=pqa_settings_for_query)
         
@@ -141,7 +141,7 @@ tools = [paperqa_query]
 
 
 # Use a model that supports tool calling
-model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=app_settings.gemini_api_key)
+model = ChatGoogleGenerativeAI(model=app_settings.llm_name, google_api_key=app_settings.gemini_api_key)
 model_with_tools = model.bind_tools(tools)
 
 def should_continue(state: AgentState) -> Literal["call_tool", "__end__"]:
