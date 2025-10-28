@@ -110,7 +110,7 @@ export function ChatInterface() {
     if (!inputValue.trim()) return
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       content: inputValue,
       role: "user",
     }
@@ -140,7 +140,7 @@ export function ChatInterface() {
       }
 
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: crypto.randomUUID(),
         content: result.answer,
         role: "assistant",
       }
@@ -155,7 +155,7 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="flex h-screen bg-black text-white">
+    <div className="flex h-full bg-black text-white">
       <Toaster position="top-center" richColors />
 
       {/* Sidebar for Session History */}
@@ -186,12 +186,14 @@ export function ChatInterface() {
       </AnimatePresence>
 
       {/* Main Chat Area */}
-      <div className="flex flex-col items-center justify-center flex-1 p-4">
-        <div className="w-full max-w-4xl flex flex-col h-[90vh]">
-          <div className="absolute top-5 left-5">
-            <Button variant="ghost" size="sm" onClick={() => setIsSidebarOpen(true)}>
-              <Menu className="h-6 w-6" />
-            </Button>
+      <div className="flex flex-col items-center flex-1 p-4">
+        <div className="w-full max-w-4xl flex flex-col h-full">
+          <div className="absolute top-5 left-5"> 
+            {!isSidebarOpen && (
+              <Button variant="ghost" size="sm" onClick={() => setIsSidebarOpen(true)}>
+                <Menu className="h-6 w-6" />
+              </Button>
+            )}
           </div>
           {/* Chat Messages Display */}
           <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
