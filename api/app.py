@@ -23,9 +23,10 @@ from prompts import prompts
 app = FastAPI()
 
 # --- Logging Setup ---
-log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs')
+now = datetime.now(ZoneInfo('Asia/Tokyo'))
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs', now.strftime('%Y'), now.strftime('%m'))
 os.makedirs(log_dir, exist_ok=True)
-log_file_path = os.path.join(log_dir, f'{datetime.now(ZoneInfo('Asia/Tokyo')).strftime("%Y-%m-%d")}.jsonl')
+log_file_path = os.path.join(log_dir, f'{now.strftime("%d")}.jsonl')
 
 rag_logger = logging.getLogger('rag_logger')
 rag_logger.setLevel(logging.INFO)
@@ -191,16 +192,23 @@ async def chat_with_papers(request: ChatRequest):
 @app.get("/api/logs")
 async def get_logs():
     all_logs = []
-    if os.path.exists(log_dir):
-        for filename in sorted(os.listdir(log_dir), reverse=True):
-            if filename.endswith(".jsonl"):
-                with open(os.path.join(log_dir, filename), "r") as f:
-                    for line in f:
-                        try:
-                            all_logs.append(json.loads(line))
-                        except json.JSONDecodeError:
-                            # Handle cases where a line is not valid JSON
-                            pass
+    base_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs')
+    if os.path.exists(base_log_dir):
+        for year in sorted(os.listdir(base_log_dir), reverse=True):
+            year_dir = os.path.join(base_log_dir, year)
+            if os.path.isdir(year_dir):
+                for month in sorted(os.listdir(year_dir), reverse=True):
+                    month_dir = os.path.join(year_dir, month)
+                    if os.path.isdir(month_dir):
+                        for filename in sorted(os.listdir(month_dir), reverse=True):
+                            if filename.endswith(".jsonl"):
+                                with open(os.path.join(month_dir, filename), "r") as f:
+                                    for line in f:
+                                        try:
+                                            all_logs.append(json.loads(line))
+                                        except json.JSONDecodeError:
+                                            # Handle cases where a line is not valid JSON
+                                            pass
     return all_logs
 
 if __name__ == "__main__":
